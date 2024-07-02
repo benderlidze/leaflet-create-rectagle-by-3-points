@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaflet Draw Rectangle by 3 Corners</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7.0.0"></script>
+    <style>
+        #map {
+            height: 100vh;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script>
+
+        // Define the plugin class
+        L.RectangleDrawer = L.Class.extend({
+            initialize: function (map) {
+                this._map = map;
+                this._points = [];
+                this._tempRectangle = null;
+                this._tempLine = null;
+
+                this._map.on('click', this._onClick, this);
+
+                //change cursor
+                this._map.getContainer().style.cursor = 'crosshair';
+            },
+
+            _onClick: function (e) {
+                this._points.push([e.latlng.lng, e.latlng.lat]);
+
+                if (this._points.length === 3) {
+                    this._points.length = 0;
+                    this._map.off('mousemove', this._drawRectangle, this);
+                }
+
+                if (this._points.length === 2) {
+                    this._map.on('mousemove', this._drawRectangle, this);
+                    this._map.off('mousemove', this._drawLine, this);
+                }
+
+                this._map.on('mousemove', this._drawLine, this);
+            },
+
+            _drawLine: function (e) {
+                if (this._tempLine) {
+                    this._map.removeLayer(this._tempLine);
+                }
+
+                if (this._points.length === 1) {
+                    this._tempLine = L.polyline([
+                        [this._points[0][1], this._points[0][0]],  // Convert back to [latitude, longitude]
+                        [e.latlng.lat, e.latlng.lng]
+                    ]);
+                    this._tempLine.addTo(this._map);
+                }
+            },
+
+
+            _drawRectangle: function (e) {
+                if (this._tempRectangle) {
+                    this._map.removeLayer(this._tempRectangle);
+                }
+                this._tempRectangle = this._createRectangle(this._points[0], this._points[1], [e.latlng.lng, e.latlng.lat]);
+                this._tempRectangle.addTo(this._map);
+            },
+
+            _createRectangle: function (pointA, pointB, pointC) {
+                // Create Turf points from coordinates
+                const ptA = turf.point(pointA);
+                const ptB = turf.point(pointB);
+                const ptC = turf.point(pointC);
+
+                // Create vector AB
+                const vectorAB = [pointB[0] - pointA[0], pointB[1] - pointA[1]];
+
+                // Create vector AC
+                const vectorAC = [pointC[0] - pointA[0], pointC[1] - pointA[1]];
+
+                // Calculate cross product of AB and AC
+                const crossProduct = vectorAB[0] * vectorAC[1] - vectorAB[1] * vectorAC[0];
+
+                // Determine sign based on cross product
+                const sign = -Math.sign(crossProduct);
+
+                // Create line AB
+                const lineAB = turf.lineString([pointA, pointB]);
+
+                // Find the length of line AB
+                const lengthAB = turf.length(lineAB);
+
+                // Find the bearing from A to B
+                const bearing = turf.bearing(ptA, ptB);
+
+                // Project point C onto line AB
+                const projectedC = turf.nearestPointOnLine(lineAB, ptC);
+
+                // Find the distance from C to line AB
+                const distance = turf.distance(ptC, projectedC);
+
+                // Create the four corners of the rectangle
+                const corner1 = turf.destination(ptA, 0, 0);
+                const corner2 = turf.destination(ptA, lengthAB, bearing);
+                const corner3 = turf.destination(corner2, distance, bearing + sign * 90);
+                const corner4 = turf.destination(corner1, distance, bearing + sign * 90);
+
+                // Create a polygon from these points
+                const rectangle = turf.polygon([[
+                    corner1.geometry.coordinates,
+                    corner2.geometry.coordinates,
+                    corner3.geometry.coordinates,
+                    corner4.geometry.coordinates,
+                    corner1.geometry.coordinates // close the polygon
+                ]]);
+
+                // Convert Turf polygon to Leaflet polygon
+                return L.geoJSON(rectangle);
+            }
+        });
+
+        // Example usage:
+        const map = L.map('map').setView({ lat: 51.519271779584045, lng: -0.12716352939605716 }, 19);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+        }).addTo(map);
+
+        const rectangleDrawer = new L.RectangleDrawer(map);
+
+
+    </script>
+</body>
+
+</html>
